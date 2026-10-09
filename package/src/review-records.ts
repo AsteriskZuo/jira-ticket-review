@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sdk } from "@asterisk/agent-sdk";
+import { sdk } from "@asteriskzuo/agent-sdk";
 
 export type ReviewStatus = "pass" | "fail" | "skip";
 

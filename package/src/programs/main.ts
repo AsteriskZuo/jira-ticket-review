@@ -1,4 +1,4 @@
-import { sdk } from "@asterisk/agent-sdk";
+import { sdk } from "@asteriskzuo/agent-sdk";
 import { runReviewFlow } from "../review-flow.js";
 
 // 入口程序（薄）：读信封 → review-flow 编排 → 唯一出口。

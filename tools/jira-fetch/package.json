@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@asterisk/agent-sdk": "^0.1.0"
+    "@asteriskzuo/agent-sdk": "^0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

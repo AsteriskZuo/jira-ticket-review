@@ -1,4 +1,4 @@
-import { sdk } from "@asterisk/agent-sdk";
+import { sdk } from "@asteriskzuo/agent-sdk";
 import { JiraClient } from "../jira-client.js";
 import { createIssueMasker } from "../masking.js";
 
