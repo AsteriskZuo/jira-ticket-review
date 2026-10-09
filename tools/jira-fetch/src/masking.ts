@@ -2,7 +2,7 @@
  * 工单内容脱敏——设计文档：docs/designs/content-masking/2026-07-23-design.md
  *
  * 单一入口：createIssueMasker() 返回 sanitizeIssueData(data)，
- * 供 JiraClientConfig.sanitizeIssueData 钩子调用（MCP 与主服务 polling 两处接线）。
+ * 由 jira-fetch 程序在 mapIssue 之后、extractIdentity 之后串行调用。
  *
  * 维护说明（迭代时阅读）：
  * - 内部是固定顺序的管道：结构化账号字段 → 正文替换（mention → 账号字典

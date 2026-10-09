@@ -1,8 +1,11 @@
 import { sdk } from "@asteriskzuo/agent-sdk";
-import { JiraClient } from "../jira-client.js";
+import { JiraClient } from "@asteriskzuo/agent-jira-client";
 import { createIssueMasker } from "../masking.js";
+import { extractIdentity, mapIssue } from "../issue-mapping.js";
 
-// jira-fetch 工具入口：jira 表单登录 + 拉取工单 + 脱敏（spec §6）。
+// jira-fetch 工具入口：jira 认证（共享包）+ 拉取工单 + 业务映射 + 脱敏（spec §6）。
+// 职责切分：认证/cookie/401 自愈由 @asteriskzuo/agent-jira-client 负责；
+// 字段映射（私有 customfield）、脱敏、identity 旁路是本业务的判断，留在本地。
 // 契约（与流程程序同构的一入一出）：
 //   input  = { issue_key }；config = { jira_url, username, password }
 //   （工具拿不到 secrets，凭据由调用方显式放进 config）
@@ -24,12 +27,35 @@ if (missingKeys.length > 0) {
 }
 
 const client = new JiraClient({
-  jiraUrl: config.jira_url,
+  baseUrl: config.jira_url,
   username: config.username,
   password: config.password,
-  sanitizeIssueData: createIssueMasker(),
 });
 
-// includeComments：全部评论都是审查证据（SKILL.md 判定原则）
-const result = await client.getIssue(issueKey, { includeComments: true });
-sdk.return(result);
+// expand=renderedFields,comment：全部评论都是审查证据（SKILL.md 判定原则），
+// 与 v2 includeComments 行为一致；getIssueRaw 不带 expand，故用 request 原语
+const result = await client.request(
+  `/rest/api/2/issue/${encodeURIComponent(issueKey)}?expand=renderedFields,comment`,
+);
+if (result.status === "error") {
+  sdk.return(result);
+}
+if (
+  !result.data ||
+  typeof result.data !== "object" ||
+  Array.isArray(result.data)
+) {
+  sdk.return({
+    status: "error",
+    code: "invalid_response",
+    message: "jira 响应不是工单对象",
+  });
+}
+
+const mapped = mapIssue(result.data as Record<string, unknown>, issueKey);
+// 先提取原始身份旁路，再脱敏——顺序不能换
+sdk.return({
+  status: "success",
+  data: createIssueMasker()(mapped),
+  identity: extractIdentity(mapped),
+});
