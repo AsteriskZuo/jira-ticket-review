@@ -1,0 +1,7 @@
+{
+  "name": "jira-fetch",
+  "version": "0.1.0",
+  "programs": {
+    "jira-fetch": "dist/programs/jira-fetch.js"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "jira-ticket-review",
+  "version": "0.1.0",
+  "programs": {
+    "main": "dist/programs/main.js"
+  },
+  "requires": {
+    "tools": ["jira-fetch"],
+    "skills": ["jira-ticket-review"]
+  }
+}

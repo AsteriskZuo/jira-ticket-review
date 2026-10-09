@@ -1,0 +1,295 @@
+{
+  "description": "Jira → 企业微信账号映射表。people 为唯一人员列表，加载时构建 jiraEmail / jiraUsername / wecomName 索引；tags 为人员分类标签（如 sdk、backend），可选、可多值，同时驱动 webhook 分类分发过滤和工单审查标准路由。",
+  "updatedAt": "2026-09-17",
+  "totalCount": 45,
+  "mappedCount": 43,
+  "skipped": [
+    {
+      "wecomName": "屈炘禾",
+      "reason": "无 Jira 账号"
+    },
+    {
+      "wecomName": "江炳耀",
+      "reason": "无 Jira 账号"
+    }
+  ],
+  "people": [
+    {
+      "jiraUsername": "andyliu",
+      "jiraEmail": "liuyujun@easemob.com",
+      "wecomUserid": "LiuYuJun",
+      "wecomName": "刘豫军"
+    },
+    {
+      "jiraUsername": "wangcan@easemob.com",
+      "jiraEmail": "wangcan@easemob.com",
+      "wecomUserid": "allenwang",
+      "wecomName": "王璨"
+    },
+    {
+      "jiraUsername": "haoxiuwen",
+      "jiraEmail": "haoxiuwen@easemob.com",
+      "wecomUserid": "HaoXiuWen",
+      "wecomName": "郝秀文"
+    },
+    {
+      "jiraUsername": "huzirun",
+      "jiraEmail": "huzirun@easemob.com",
+      "wecomUserid": "HuZiRun",
+      "wecomName": "胡子润"
+    },
+    {
+      "jiraUsername": "sunwei",
+      "jiraEmail": "sunwei@easemob.com",
+      "wecomUserid": "SunWei",
+      "wecomName": "孙伟"
+    },
+    {
+      "jiraUsername": "yaotong",
+      "jiraEmail": "yaotong@easemob.com",
+      "wecomUserid": "YaoTong",
+      "wecomName": "姚彤"
+    },
+    {
+      "jiraUsername": "dujiepeng",
+      "jiraEmail": "dujiepeng@easemob.com",
+      "wecomUserid": "WuYeXiuLing",
+      "wecomName": "杜洁鹏"
+    },
+    {
+      "jiraUsername": "kongjialin",
+      "jiraEmail": "kongjialin@easemob.com",
+      "wecomUserid": "KongJiaLin",
+      "wecomName": "孔佳林"
+    },
+    {
+      "jiraUsername": "lichunwei",
+      "jiraEmail": "lichunwei@easemob.com",
+      "wecomUserid": "LiChunWei",
+      "wecomName": "李春伟"
+    },
+    {
+      "jiraUsername": "lijiaqi@agora.io",
+      "jiraEmail": "lijiaqi@shengwang.cn",
+      "wecomUserid": "LiJiaQi",
+      "wecomName": "李佳琪"
+    },
+    {
+      "jiraUsername": "wangyazhi",
+      "jiraEmail": "wangyazhi@easemob.com",
+      "wecomUserid": "WangYaZhi",
+      "wecomName": "王亚芝"
+    },
+    {
+      "jiraUsername": "zhukai",
+      "jiraEmail": "zhukai@easemob.com",
+      "wecomUserid": "LaoZhu",
+      "wecomName": "朱凯"
+    },
+    {
+      "jiraUsername": "cuizhi",
+      "jiraEmail": "cuizhigang@easemob.com",
+      "wecomUserid": "CuiZhiGang",
+      "wecomName": "崔志刚"
+    },
+    {
+      "jiraUsername": "guomumin",
+      "jiraEmail": "guomumin@easemob.com",
+      "wecomUserid": "GuoMuMin",
+      "wecomName": "郭穆敏"
+    },
+    {
+      "jiraUsername": "chasehuang",
+      "jiraEmail": "chasehuang@easemob.com",
+      "wecomUserid": "HuangShuai",
+      "wecomName": "黄帅"
+    },
+    {
+      "jiraUsername": "jhj",
+      "jiraEmail": "jianghaojie@easemob.com",
+      "wecomUserid": "JiangHaoJie",
+      "wecomName": "姜豪杰"
+    },
+    {
+      "jiraUsername": "sy",
+      "jiraEmail": "sunyan@easemob.com",
+      "wecomUserid": "SunYan",
+      "wecomName": "孙炎"
+    },
+    {
+      "jiraUsername": "zouyong",
+      "jiraEmail": "zouyong@easemob.com",
+      "wecomUserid": "ZouYong",
+      "wecomName": "邹勇",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "fudonghai",
+      "jiraEmail": "fudh@easemob.com",
+      "wecomUserid": "LiMingJiuZaiYanQian",
+      "wecomName": "傅东海",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "guozhao",
+      "jiraEmail": "guozhao@easemob.com",
+      "wecomUserid": "GuoChao",
+      "wecomName": "郭朝",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "liufan",
+      "jiraEmail": "liufan@easemob.com",
+      "wecomUserid": "LiuFan",
+      "wecomName": "刘帆",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "wangmeng",
+      "jiraEmail": "wangmeng@easemob.com",
+      "wecomUserid": "WangMeng",
+      "wecomName": "王猛",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "enricowei",
+      "jiraEmail": "weizeyuan@easemob.com",
+      "wecomUserid": "GongZiXiaoBaiYouDianHei",
+      "wecomName": "魏泽源",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "taoxicxu",
+      "jiraEmail": "taoxicxu@easemob.com",
+      "wecomUserid": "XuTao",
+      "wecomName": "徐涛",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "YXD",
+      "jiraEmail": "yangxiaodong@easemob.com",
+      "wecomUserid": "YangXiaoDong",
+      "wecomName": "杨晓东",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "sanyo",
+      "jiraEmail": "yeshengan@easemob.com",
+      "wecomUserid": "YeShengAn",
+      "wecomName": "叶圣安",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "jerry",
+      "jiraEmail": "zhangchao@easemob.com",
+      "wecomUserid": "ZhangChao",
+      "wecomName": "张超",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "zhangyongkang",
+      "jiraEmail": "zhangyongkang@easemob.com",
+      "wecomUserid": "TaiLe",
+      "wecomName": "张永康",
+      "tags": ["backend"]
+    },
+    {
+      "jiraUsername": "zhaoliang",
+      "jiraEmail": "zhaoliang@easemob.com",
+      "wecomUserid": "ZhaoLiang",
+      "wecomName": "赵亮",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "NeilLiu",
+      "jiraEmail": "liujinan@easemob.com",
+      "wecomUserid": "LiuJiNan",
+      "wecomName": "刘吉南",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "victorli",
+      "jiraEmail": "lixiaoming@easemob.com",
+      "wecomUserid": "LiXiaoMing",
+      "wecomName": "李小明",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "stwang",
+      "jiraEmail": "wangshaoteng@easemob.com",
+      "wecomUserid": "WangShaoTeng",
+      "wecomName": "王少腾",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "DoubleD",
+      "jiraEmail": "chengpu.xu@easemob.com",
+      "wecomUserid": "XuChengPu",
+      "wecomName": "许成谱",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "mick.yu",
+      "jiraEmail": "yuqiang@easemob.com",
+      "wecomUserid": "YuQiang",
+      "wecomName": "余强"
+    },
+    {
+      "jiraUsername": "zhangdong",
+      "jiraEmail": "zhangdong@easemob.com",
+      "wecomUserid": "ZhangDong",
+      "wecomName": "张东",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "jichao.zhu@easemob.com",
+      "jiraEmail": "zhujichao@easemob.com",
+      "wecomUserid": "ZhuJiChao",
+      "wecomName": "朱继超",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "asteriskzuo",
+      "jiraEmail": "zuoyu@easemob.com",
+      "wecomUserid": "ZuoYu",
+      "wecomName": "佐玉",
+      "tags": ["sdk"]
+    },
+    {
+      "jiraUsername": "test1",
+      "jiraEmail": "wcy123@easemob.com",
+      "wecomUserid": "CeShiZhangHao",
+      "wecomName": "测试用户"
+    },
+    {
+      "jiraUsername": "neohuang",
+      "jiraEmail": "huangfeipeng@easemob.com",
+      "wecomUserid": "72ef1267edb43f43059ca1f4f2a2b3d6",
+      "wecomName": "黄飞鹏"
+    },
+    {
+      "jiraUsername": "yangzilong",
+      "jiraEmail": "yangzilong@easemob.com",
+      "wecomUserid": "YangZiLong",
+      "wecomName": "杨子龙"
+    },
+    {
+      "jiraUsername": "wangfeng",
+      "jiraEmail": "wangfeng@easemob.com",
+      "wecomUserid": "WangFeng",
+      "wecomName": "王峰"
+    },
+    {
+      "jiraUsername": "amy.wang",
+      "jiraEmail": "wangyaqian@easemob.com",
+      "wecomUserid": "WangYaQian",
+      "wecomName": "王雅倩"
+    },
+    {
+      "jiraUsername": "liupeng",
+      "jiraEmail": "liupeng@easemob.com",
+      "wecomUserid": "LiuPeng",
+      "wecomName": "刘鹏"
+    }
+  ]
+}
