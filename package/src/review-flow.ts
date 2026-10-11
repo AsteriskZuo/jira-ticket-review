@@ -98,6 +98,9 @@ export async function runReviewFlow(
       jira_url: jiraUrl,
       username: deps.secret("jira_username"),
       password: deps.secret("jira_password"),
+      // 网关 Basic 凭据：easemob jira 前置网关要求，缺了会被网关 401 拦截
+      redirect_username: deps.secret("jira_redirect_username"),
+      redirect_password: deps.secret("jira_redirect_password"),
     },
   });
   if (!isJiraFetchOutput(fetched)) {

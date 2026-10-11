@@ -145,7 +145,7 @@ describe("runReviewFlow", () => {
     expect(deps.agent).not.toHaveBeenCalled();
   });
 
-  it("凭据经 sdk.secret 读出放进 jira-fetch config", async () => {
+  it("凭据经 sdk.secret 读出放进 jira-fetch config（含网关 Basic 凭据）", async () => {
     const { deps } = await makeDeps();
 
     await runReviewFlow(
@@ -159,6 +159,8 @@ describe("runReviewFlow", () => {
         jira_url: "https://jira.example.com",
         username: "secret-jira_username",
         password: "secret-jira_password",
+        redirect_username: "secret-jira_redirect_username",
+        redirect_password: "secret-jira_redirect_password",
       },
     });
   });

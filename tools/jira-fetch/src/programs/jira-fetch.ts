@@ -7,8 +7,9 @@ import { extractIdentity, mapIssue } from "../issue-mapping.js";
 // 职责切分：认证/cookie/401 自愈由 @asteriskzuo/agent-jira-client 负责；
 // 字段映射（私有 customfield）、脱敏、identity 旁路是本业务的判断，留在本地。
 // 契约（与流程程序同构的一入一出）：
-//   input  = { issue_key }；config = { jira_url, username, password }
-//   （工具拿不到 secrets，凭据由调用方显式放进 config）
+//   input  = { issue_key }；config = { jira_url, username, password, redirect_username?, redirect_password? }
+//   （工具拿不到 secrets，凭据由调用方显式放进 config；
+//     redirect_* 为网关 Basic 凭据，jira 前置网关反代时必传，否则被网关 401 拦截）
 // 成功 sdk.return({ status:'success', data:<脱敏工单>, identity })；
 // jira 层失败也走 sdk.return({ status:'error', code, message })——error 双态
 // 是业务可判别的正常输出；sdk.fail 只留给信封/参数非法。
@@ -30,6 +31,15 @@ const client = new JiraClient({
   baseUrl: config.jira_url,
   username: config.username,
   password: config.password,
+  // 网关 Basic 凭据（可选）：前置网关反代时缺了会被 401 拦在 jira 之外
+  ...(typeof config.redirect_username === "string" &&
+  config.redirect_username.length > 0
+    ? { redirectUsername: config.redirect_username }
+    : {}),
+  ...(typeof config.redirect_password === "string" &&
+  config.redirect_password.length > 0
+    ? { redirectPassword: config.redirect_password }
+    : {}),
 });
 
 // expand=renderedFields,comment：全部评论都是审查证据（SKILL.md 判定原则），
