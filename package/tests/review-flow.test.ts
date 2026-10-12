@@ -291,6 +291,75 @@ describe("runReviewFlow", () => {
     expect(call.input).toContain("sdk");
   });
 
+  it("非 Bug 工单短路：写 skip 记录 + return(null)，不调大模型", async () => {
+    const log = jest.fn<ReviewFlowDeps["log"]>(() => undefined);
+    const { deps, store } = await makeDeps({
+      run: jest.fn(async () => ({
+        status: "success",
+        data: ticket({ issueType: "New Feature" }),
+      })),
+      log,
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome).toEqual({ type: "return", value: null });
+    expect(deps.agent).not.toHaveBeenCalled();
+    const record = await store.get("HIM-1");
+    expect(record?.status).toBe("skip");
+    expect(record?.ticketUpdatedAt).toBe(UPDATED);
+    expect(log).toHaveBeenCalledWith("info", "非 Bug 工单，忽略审查", {
+      issueKey: "HIM-1",
+      issueType: "New Feature",
+    });
+  });
+
+  it("issueType 缺失：warn 留痕 + fail-open 继续审查", async () => {
+    const log = jest.fn<ReviewFlowDeps["log"]>(() => undefined);
+    const { deps } = await makeDeps({
+      run: jest.fn(async () => ({
+        status: "success",
+        data: ticket({ issueType: undefined }),
+      })),
+      log,
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(deps.agent).toHaveBeenCalledTimes(1);
+    expect(outcome.type).toBe("return");
+    expect(log).toHaveBeenCalledWith("warn", "工单缺 issueType 字段，继续审查", {
+      issueKey: "HIM-1",
+    });
+  });
+
+  it("大模型原始输出与审查结果落业务日志", async () => {
+    const log = jest.fn<ReviewFlowDeps["log"]>(() => undefined);
+    const { deps } = await makeDeps({ log });
+
+    await runReviewFlow(envelope({ issue_key: "HIM-1", updated: UPDATED }), deps);
+
+    expect(log).toHaveBeenCalledWith(
+      "info",
+      "大模型原始输出",
+      expect.objectContaining({
+        issueKey: "HIM-1",
+        output: expect.stringContaining('"decision":"pass"'),
+      }),
+    );
+    expect(log).toHaveBeenCalledWith(
+      "info",
+      "审查结果",
+      expect.objectContaining({ issueKey: "HIM-1", decision: "pass" }),
+    );
+  });
+
   it("skip（非 Bug）：写 skip 记录 + return(null)", async () => {
     const { deps, store } = await makeDeps({
       agent: jest.fn(async () =>
