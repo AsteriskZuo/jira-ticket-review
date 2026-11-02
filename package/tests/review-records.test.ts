@@ -87,4 +87,43 @@ describe("ReviewRecordStore", () => {
     expect(data["HIM-7"].status).toBe("fail");
     expect(data["HIM-7"].ticketUpdatedAt).toBe("2026-07-16T10:00:00.000Z");
   });
+
+  it("事件时间早于记录时间 → 跳过（延迟合并/乱序吸收）", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "review-records-"));
+    const store = new ReviewRecordStore(dir);
+
+    await store.markReviewed("HIM-8", "fail", "2026-07-16T11:00:00.000Z");
+    await expect(
+      store.checkSkip("HIM-8", "2026-07-16T10:00:00.000Z"),
+    ).resolves.toBe("already_reviewed_no_changes");
+  });
+
+  it("Jira（+0800）与 RFC3339（+08:00）时间格式可互比", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "review-records-"));
+    const store = new ReviewRecordStore(dir);
+
+    await store.markReviewed("HIM-9", "fail", "2026-07-16T10:30:00.000+0800");
+    await expect(
+      store.checkSkip("HIM-9", "2026-07-16T10:30:00+08:00"),
+    ).resolves.toBe("already_reviewed_no_changes");
+    await expect(
+      store.checkSkip("HIM-9", "2026-07-16T09:00:00+08:00"),
+    ).resolves.toBe("already_reviewed_no_changes");
+    await expect(
+      store.checkSkip("HIM-9", "2026-07-16T11:00:00+08:00"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("时间不可解析 → 退回相等比较", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "review-records-"));
+    const store = new ReviewRecordStore(dir);
+
+    await store.markReviewed("HIM-10", "fail", "not-a-time");
+    await expect(store.checkSkip("HIM-10", "not-a-time")).resolves.toBe(
+      "already_reviewed_no_changes",
+    );
+    await expect(
+      store.checkSkip("HIM-10", "also-not-a-time"),
+    ).resolves.toBeUndefined();
+  });
 });

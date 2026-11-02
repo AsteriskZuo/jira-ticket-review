@@ -1,7 +1,13 @@
 /**
  * 单轮审查工单主编排（spec §5）：
- * 去重判断 → sdk.run('jira-fetch') → 终态短路 → Bug 类型过滤 → 人员标签
- * → sdk.agent 链式审查 → 写审查记录 → 组装通知。
+ * 去重判断 → created 延迟（仅新工单首个 created 事件）→ sdk.run('jira-fetch')
+ * → 终态短路 → Bug 类型过滤 → 人员标签 → sdk.agent 链式审查 → 写审查记录 → 组装通知。
+ *
+ * created 延迟（decisions/2026-11-02 D3）：webhook 突发场景 created 常紧跟多次
+ * updated，创建者也习惯建单后再补 Assignee。睡 5 分钟占住本工单通道，期间同工单
+ * 后续事件在平台通道排队；睡醒拉的是实时工单（自动含全部后续变更），并以实时
+ * updated 写标记，排队事件随后被 checkSkip 的 ≤ 语义吸收。仅「事件为 created 且
+ * 本工单无任何审查记录」才睡：有记录 = 乱序/补发的 created，直接走正常流程。
  *
  * 大模型审查为链式兜底：sdk.models() 枚举生效配置的全部 provider/model，
  * 按声明顺序逐个 fresh 会话尝试，首个产出合法审查结果的模型即采纳，
@@ -24,11 +30,12 @@ import {
 import { parseReviewOutput, type ReviewOutput } from "./review-output.js";
 import { ReviewRecordStore } from "./review-records.js";
 
-/**
- * Jira 终态工单的 statusCategory 值（HIM 项目对应 status：Complete、部署完成）。
- * 终态短路不调大模型（v2 语义）。
- */
+/** jira 终态工单的 statusCategory 值（HIM 项目对应 status：Complete、部署完成）。
+ *  终态短路不调大模型（v2 语义）。 */
 const TERMINAL_STATUS_CATEGORY = "Complete";
+
+/** created 事件延迟审查时长（v2 语义：给创建者补填 Assignee 等字段的时间） */
+const CREATED_REVIEW_DELAY_MS = 5 * 60 * 1000;
 
 /** jira-fetch 工具的输出契约（spec §6）：error 双态是业务可判别的正常输出 */
 type JiraFetchOutput =
@@ -67,6 +74,8 @@ export type ReviewFlowDeps = {
   ) => void;
   /** 缺省 new ReviewRecordStore()（落点 sdk.dataDir()）；测试传临时目录实例 */
   store?: ReviewRecordStore;
+  /** created 延迟计时器（缺省真实 setTimeout；测试注入立即 resolve 的 fake） */
+  sleep?: (ms: number) => Promise<void>;
   lookupPersonTags?: (user: {
     emailAddress?: string;
     name?: string;
@@ -79,7 +88,8 @@ export type ReviewFlowDeps = {
 
 /**
  * 执行一轮审查。event 为入口事件信封（EventEnvelope 形状），
- * payload 取 jira-polling 的轻量字段（issue_key / updated）。
+ * payload 取轻量字段：issue_key（两入口共有）、updated（jira-polling）
+ * 或 time（webhook 归一化事件）、event_type（判别 created，仅 webhook 有）。
  */
 export async function runReviewFlow(
   event: unknown,
@@ -89,7 +99,7 @@ export async function runReviewFlow(
   if (!payload.issueKey) {
     return { type: "fail", reason: "payload 缺 issue_key" };
   }
-  const { issueKey, updated } = payload;
+  const { issueKey, updated, isCreated } = payload;
   const store = deps.store ?? new ReviewRecordStore();
   const lookupPersonTags = deps.lookupPersonTags ?? defaultLookupPersonTags;
   const lookupWeComAccount =
@@ -100,6 +110,21 @@ export async function runReviewFlow(
   if (skipReason) {
     deps.log("info", `跳过审查：${skipReason}`, { issueKey });
     return { type: "return", value: null };
+  }
+
+  // 1.5 created 延迟：仅「事件为 created 且无任何审查记录」才睡——有记录 =
+  // 乱序/补发的 created（如 update 先行审过），直接走正常流程不再等。
+  // 睡在本 run 内 = 占住本工单通道，期间同工单事件在平台通道排队，睡醒拉
+  // 实时工单即含其全部变更（合并窗口）；失败重试经平台 recover 重跑，不丢。
+  if (isCreated && (await store.get(issueKey)) === undefined) {
+    const sleep =
+      deps.sleep ??
+      ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    deps.log("info", "created 事件延迟审查", {
+      issueKey,
+      delayMs: CREATED_REVIEW_DELAY_MS,
+    });
+    await sleep(CREATED_REVIEW_DELAY_MS);
   }
 
   // 2. 拉取工单（脱敏在 jira-fetch 内完成）；jira 层失败 → 整体失败
@@ -135,6 +160,13 @@ export async function runReviewFlow(
   }
   const ticket = fetched.data;
   const identity = fetched.identity;
+  // 去重标记用审查时刻实时工单的 updated（非事件自带时间）：睡眠/排队期间
+  // 落到工单上的变更一并被覆盖，后续旧事件经 checkSkip 的 ≤ 语义被吸收
+  const liveUpdated =
+    typeof ticket.updated === "string" && ticket.updated !== ""
+      ? ticket.updated
+      : undefined;
+  const markTime = liveUpdated ?? updated;
   deps.log("info", "工单拉取成功", {
     issueKey,
     issueType: ticket.issueType,
@@ -144,7 +176,7 @@ export async function runReviewFlow(
 
   // 3. 终态短路：写 skip 记录、不调大模型、无产出（v2 语义）
   if (ticket.statusCategory === TERMINAL_STATUS_CATEGORY) {
-    await store.markReviewed(issueKey, "skip", updated);
+    await store.markReviewed(issueKey, "skip", markTime);
     deps.log("info", "工单已终态，跳过审查", {
       issueKey,
       status: ticket.status,
@@ -161,7 +193,7 @@ export async function runReviewFlow(
   if (issueType === undefined) {
     deps.log("warn", "工单缺 issueType 字段，继续审查", { issueKey });
   } else if (issueType !== "Bug") {
-    await store.markReviewed(issueKey, "skip", updated);
+    await store.markReviewed(issueKey, "skip", markTime);
     deps.log("info", "非 Bug 工单，忽略审查", { issueKey, issueType });
     return { type: "return", value: null };
   }
@@ -188,7 +220,7 @@ export async function runReviewFlow(
   const review = reviewed.review;
 
   // 7. 写审查记录（pass 不记 ticketUpdatedAt，fail/skip 记录）
-  await store.markReviewed(issueKey, review.decision, updated);
+  await store.markReviewed(issueKey, review.decision, markTime);
 
   // 8. skip 不通知：模型判定的 skip 兜底（类型过滤已在步骤 4 前置，这里
   // 兜的是模型依 skill 规则判出的其他 skip 情形），只记录（v2 语义）
@@ -303,10 +335,15 @@ async function runAgentReviewWithFallback(
   return { ok: false, reason: `全部模型审查失败：${failures.join("；")}` };
 }
 
-/** 从事件信封取 jira-polling 轻量 payload（类型守卫，非法字段一律 undefined） */
+/** 从事件信封取业务关心的 payload 字段（类型守卫，非法字段一律 undefined）。
+ *  updated：jira-polling 给 `updated`（Jira 原始格式）；webhook 转发的归一化事件
+ *  没有 updated，回退读 `time`（RFC3339，语义 = 事件时间，与 v2 的近似同款）。
+ *  isCreated：仅 webhook 归一化 payload 的 event_type 可判别；轮询 payload 无此
+ *  字段，恒 false（轮询自带轮询周期延迟，不需要 created 延迟）。 */
 function readPayload(event: unknown): {
   issueKey?: string;
   updated?: string;
+  isCreated?: boolean;
 } {
   if (!event || typeof event !== "object") {
     return {};
@@ -316,12 +353,19 @@ function readPayload(event: unknown): {
     return {};
   }
   const record = payload as Record<string, unknown>;
+  const updated =
+    typeof record.updated === "string" && record.updated !== ""
+      ? record.updated
+      : typeof record.time === "string" && record.time !== ""
+        ? record.time
+        : undefined;
   return {
     issueKey:
       typeof record.issue_key === "string" && record.issue_key.length > 0
         ? record.issue_key
         : undefined,
-    updated: typeof record.updated === "string" ? record.updated : undefined,
+    updated,
+    isCreated: record.event_type === "jira:issue_created",
   };
 }
 

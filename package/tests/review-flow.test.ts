@@ -6,6 +6,8 @@ import { runReviewFlow, type ReviewFlowDeps } from "../src/review-flow.js";
 import { ReviewRecordStore } from "../src/review-records.js";
 
 const UPDATED = "2026-10-09T10:00:00.000+0800";
+/** 审查时刻实时工单的 updated（jira-fetch 返回；有意晚于事件自带时间，区分标记来源） */
+const LIVE_UPDATED = "2026-10-09T11:00:00.000+0800";
 
 function envelope(payload: Record<string, unknown>): unknown {
   return {
@@ -28,6 +30,7 @@ function ticket(overrides: Record<string, unknown> = {}) {
     status: "Open",
     statusCategory: "In Progress",
     issueType: "Bug",
+    updated: LIVE_UPDATED,
     ...overrides,
   };
 }
@@ -187,7 +190,7 @@ describe("runReviewFlow", () => {
     expect(deps.agent).not.toHaveBeenCalled();
     const record = await store.get("HIM-1");
     expect(record?.status).toBe("skip");
-    expect(record?.ticketUpdatedAt).toBe(UPDATED);
+    expect(record?.ticketUpdatedAt).toBe(LIVE_UPDATED);
   });
 
   it("唯一模型输出非法 → fail（全部模型审查失败），不写记录", async () => {
@@ -273,7 +276,7 @@ describe("runReviewFlow", () => {
     expect((value as { content: string }).content).toContain("工单审查不通过");
     const record = await store.get("HIM-1");
     expect(record?.status).toBe("fail");
-    expect(record?.ticketUpdatedAt).toBe(UPDATED);
+    expect(record?.ticketUpdatedAt).toBe(LIVE_UPDATED);
   });
 
   it("agent input 含工单数据与人员标签段", async () => {
@@ -318,7 +321,7 @@ describe("runReviewFlow", () => {
     expect(deps.agent).not.toHaveBeenCalled();
     const record = await store.get("HIM-1");
     expect(record?.status).toBe("skip");
-    expect(record?.ticketUpdatedAt).toBe(UPDATED);
+    expect(record?.ticketUpdatedAt).toBe(LIVE_UPDATED);
     expect(log).toHaveBeenCalledWith("info", "非 Bug 工单，忽略审查", {
       issueKey: "HIM-1",
       issueType: "New Feature",
@@ -402,7 +405,7 @@ describe("runReviewFlow", () => {
     expect(outcome).toEqual({ type: "return", value: null });
     const record = await store.get("HIM-1");
     expect(record?.status).toBe("skip");
-    expect(record?.ticketUpdatedAt).toBe(UPDATED);
+    expect(record?.ticketUpdatedAt).toBe(LIVE_UPDATED);
   });
 });
 
@@ -611,5 +614,95 @@ describe("链式兜底审查", () => {
     expect(deps.agent).toHaveBeenCalledTimes(1);
     const record = await store.get("HIM-1");
     expect(record?.status).toBe("skip");
+  });
+});
+
+
+describe("created 延迟与合并（webhook 归一化事件）", () => {
+  // webhook 形状：time（RFC3339）代替 updated；event_type 判别 created
+  const EVENT_TIME = "2026-10-09T09:00:00+08:00"; // = 01:00Z
+  const webhookPayload = (overrides: Record<string, unknown> = {}) => ({
+    issue_key: "HIM-1",
+    time: EVENT_TIME,
+    event_type: "jira:issue_created",
+    ...overrides,
+  });
+
+  it("created 且无审查记录 → 先睡 5 分钟再拉取工单（睡眠在 jira-fetch 之前）", async () => {
+    const sleep = jest.fn(async (_ms: number) => undefined);
+    const { deps } = await makeDeps({ sleep });
+
+    const outcome = await runReviewFlow(envelope(webhookPayload()), deps);
+
+    expect(outcome.type).toBe("return");
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(5 * 60 * 1000);
+    const sleepOrder = sleep.mock.invocationCallOrder[0] as number;
+    const runOrder = (deps.run as jest.Mock).mock.invocationCallOrder[0];
+    expect(sleepOrder).toBeLessThan(runOrder as number);
+  });
+
+  it("created 延迟后判 fail：标记写实时工单 updated（非事件 time）", async () => {
+    const sleep = jest.fn(async () => undefined);
+    const { deps, store } = await makeDeps({
+      sleep,
+      agent: jest.fn(async () =>
+        JSON.stringify({
+          decision: "fail",
+          reason: "缺少 AppKey",
+          summary: "信息不足",
+          classification: "Bug",
+          scenarios: ["login"],
+          issueKey: "HIM-1",
+        }),
+      ),
+    });
+
+    const outcome = await runReviewFlow(envelope(webhookPayload()), deps);
+
+    expect(outcome.type).toBe("return");
+    const record = await store.get("HIM-1");
+    expect(record?.status).toBe("fail");
+    expect(record?.ticketUpdatedAt).toBe(LIVE_UPDATED);
+  });
+
+  it("created 但已有审查记录（乱序/补发）→ 不睡，直接走正常流程", async () => {
+    const sleep = jest.fn(async () => undefined);
+    const { deps, store } = await makeDeps({ sleep });
+    // 已有 fail 记录（00:00Z），事件时间（01:00Z）更晚 → checkSkip 放行；有记录 → 不睡
+    await store.markReviewed("HIM-1", "fail", "2026-10-09T08:00:00.000+0800");
+
+    const outcome = await runReviewFlow(envelope(webhookPayload()), deps);
+
+    expect(outcome.type).toBe("return");
+    expect(sleep).not.toHaveBeenCalled();
+    expect(deps.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("webhook updated 事件（event_type=jira:issue_updated）→ 不睡", async () => {
+    const sleep = jest.fn(async () => undefined);
+    const { deps } = await makeDeps({ sleep });
+
+    await runReviewFlow(
+      envelope(webhookPayload({ event_type: "jira:issue_updated" })),
+      deps,
+    );
+
+    expect(sleep).not.toHaveBeenCalled();
+    expect(deps.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("乱序吸收：事件 time 不晚于已有 fail 记录 → 秒跳（不睡、不拉取）", async () => {
+    const sleep = jest.fn(async () => undefined);
+    const { deps, store } = await makeDeps({ sleep });
+    // 记录时间（02:00Z）晚于事件 time（01:00Z）：该事件已被覆盖
+    await store.markReviewed("HIM-1", "fail", "2026-10-09T10:00:00.000+0800");
+
+    const outcome = await runReviewFlow(envelope(webhookPayload()), deps);
+
+    expect(outcome).toEqual({ type: "return", value: null });
+    expect(sleep).not.toHaveBeenCalled();
+    expect(deps.run).not.toHaveBeenCalled();
+    expect(deps.agent).not.toHaveBeenCalled();
   });
 });
