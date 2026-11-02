@@ -1,7 +1,11 @@
 /**
  * 单轮审查工单主编排（spec §5）：
  * 去重判断 → sdk.run('jira-fetch') → 终态短路 → Bug 类型过滤 → 人员标签
- * → sdk.agent 审查 → 解析输出 → 写审查记录 → 组装通知。
+ * → sdk.agent 链式审查 → 写审查记录 → 组装通知。
+ *
+ * 大模型审查为链式兜底：sdk.models() 枚举生效配置的全部 provider/model，
+ * 按声明顺序逐个 fresh 会话尝试，首个产出合法审查结果的模型即采纳，
+ * 其余不再调用（单模型故障/输出失常不拖垮整轮审查）。
  *
  * sdk 边界全部经 deps 注入（生产 = 真 sdk，测试 = mock）；流程不直接
  * 调 sdk.return/sdk.fail（never 出口），而是返回 FlowOutcome 由 main 映射。
@@ -10,13 +14,14 @@
  * 第一现场）；日志经 sdk.log → stderr → runner 采集进该 run 的业务日志文件。
  */
 
+import type { ModelsInfo } from "@asteriskzuo/agent-sdk";
 import { buildNotifyMessage, type ReviewIdentity } from "./notify-message.js";
 import {
   lookupPersonTags as defaultLookupPersonTags,
   lookupWeComAccount as defaultLookupWeComAccount,
   type WeComAccount,
 } from "./person-mapping.js";
-import { parseReviewOutput } from "./review-output.js";
+import { parseReviewOutput, type ReviewOutput } from "./review-output.js";
 import { ReviewRecordStore } from "./review-records.js";
 
 /**
@@ -48,7 +53,11 @@ export type ReviewFlowDeps = {
     skills: string[];
     input: unknown;
     mode?: "channel" | "fresh";
+    /** 本次调用使用的模型（provider/id）；链式兜底用，缺省 = 业务默认模型 */
+    model?: string;
   }) => Promise<unknown>;
+  /** 枚举本业务生效大模型配置；未配置返回空枚举（{ default: "", providers: [] }），不抛错 */
+  models: () => Promise<ModelsInfo>;
   config: () => Record<string, string>;
   secret: (name: string) => string;
   log: (
@@ -164,37 +173,24 @@ export async function runReviewFlow(
   });
   deps.log("info", "人员标签查询完成", { issueKey, tags });
 
-  // 6. 大模型审查（skills 须在本业务绑定的 skill 集合内）；
-  // mode 'fresh'：单轮审查无状态语义（v2 resetSession: true），
-  // 同工单复审不沿用通道历史会话
-  const agentOutput = await deps.agent({
-    skills: ["jira-ticket-review"],
-    input: buildAgentInput(issueKey, ticket, tags),
-    mode: "fresh",
-  });
-
-  // 7. 解析输出：agent 返回值类型 unknown，非字符串先 JSON.stringify。
-  // 原始输出先落日志再解析：解析失败时第一现场已在业务日志里
-  const outputText =
-    typeof agentOutput === "string" ? agentOutput : JSON.stringify(agentOutput);
-  deps.log("info", "大模型原始输出", { issueKey, output: outputText });
-  const review = parseReviewOutput(outputText);
-  if (!review) {
-    deps.log("error", "审查输出解析失败", { issueKey });
-    return { type: "fail", reason: "审查输出解析失败" };
-  }
-  deps.log("info", "审查结果", {
+  // 6. 大模型审查（链式兜底，skills 须在本业务绑定的 skill 集合内）：
+  // 枚举生效配置全部模型按声明顺序逐个 fresh 会话尝试，首个产出合法
+  // 审查结果的模型即采纳；未配置 / 枚举失败 / 全部失败 → 整体 fail
+  //（不写审查记录，工单下次事件重试——与既有"审查失败不写记录"语义一致）
+  const reviewed = await runAgentReviewWithFallback(
+    deps,
     issueKey,
-    decision: review.decision,
-    classification: review.classification,
-    scenarios: review.scenarios,
-    skillVersion: review.skillVersion,
-  });
+    buildAgentInput(issueKey, ticket, tags),
+  );
+  if (!reviewed.ok) {
+    return { type: "fail", reason: reviewed.reason };
+  }
+  const review = reviewed.review;
 
-  // 8. 写审查记录（pass 不记 ticketUpdatedAt，fail/skip 记录）
+  // 7. 写审查记录（pass 不记 ticketUpdatedAt，fail/skip 记录）
   await store.markReviewed(issueKey, review.decision, updated);
 
-  // 9. skip 不通知：模型判定的 skip 兜底（类型过滤已在步骤 4 前置，这里
+  // 8. skip 不通知：模型判定的 skip 兜底（类型过滤已在步骤 4 前置，这里
   // 兜的是模型依 skill 规则判出的其他 skip 情形），只记录（v2 语义）
   if (review.decision === "skip") {
     deps.log("info", "模型判定 skip，只记录不通知", {
@@ -204,7 +200,7 @@ export async function runReviewFlow(
     return { type: "return", value: null };
   }
 
-  // 10. pass/fail 通知：组装 wecom-webhook resultDoc 形状
+  // 9. pass/fail 通知：组装 wecom-webhook resultDoc 形状
   const message = await buildNotifyMessage(
     { review, identity, jiraUrl },
     lookupWeComAccount,
@@ -215,6 +211,96 @@ export async function runReviewFlow(
     mentions: message.mentions ?? [],
   });
   return { type: "return", value: message };
+}
+
+/** 链式审查结果：ok 命中采纳；reason 为面向日志/失败透传的中文汇总 */
+type AgentReviewOutcome =
+  { ok: true; review: ReviewOutput } | { ok: false; reason: string };
+
+/**
+ * 链式兜底审查：枚举生效配置全部 provider/model，按声明顺序逐个
+ * fresh 会话尝试（每次独立会话，互不串味），首个产出合法 ReviewOutput
+ * 的模型即采纳，其余不再调用（skip 是合法审查结论，同样命中即停）。
+ *
+ * 失败语义：
+ * - models() 抛错（通道级故障）→ 不再硬试，ok:false（reason 含原始错误）；
+ * - 空枚举（业务未配置大模型）→ 不调 agent，ok:false（省一次必败的配额）；
+ * - 单次调用抛错 / 输出解析失败 → warn 留痕换下一个；
+ * - 全部失败 → error 日志 + ok:false（reason 汇总各模型原因）。
+ */
+async function runAgentReviewWithFallback(
+  deps: ReviewFlowDeps,
+  issueKey: string,
+  input: unknown,
+): Promise<AgentReviewOutcome> {
+  let modelsInfo: ModelsInfo;
+  try {
+    modelsInfo = await deps.models();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    deps.log("error", "枚举大模型配置失败", {
+      issueKey,
+      errorMessage: message,
+    });
+    return { ok: false, reason: `枚举大模型配置失败：${message}` };
+  }
+
+  // 声明顺序即尝试顺序：第一个 provider 的第一个模型 = 平台默认模型，天然最先
+  const chain = modelsInfo.providers.flatMap((provider) =>
+    provider.models.map((model) => `${provider.name}/${model}`),
+  );
+  if (chain.length === 0) {
+    deps.log("error", "业务未配置大模型配置", { issueKey });
+    return { ok: false, reason: "业务未配置大模型配置" };
+  }
+
+  const failures: string[] = [];
+  for (const model of chain) {
+    let outputText: string;
+    try {
+      const output = await deps.agent({
+        skills: ["jira-ticket-review"],
+        input,
+        // 单轮审查无状态语义（v2 resetSession: true）：每次尝试独立会话，
+        // 同工单复审不沿用通道历史会话
+        mode: "fresh",
+        model,
+      });
+      outputText = typeof output === "string" ? output : JSON.stringify(output);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.log("warn", "模型调用失败，尝试下一个", {
+        issueKey,
+        model,
+        errorMessage: message,
+      });
+      failures.push(`${model}: 调用失败 ${message}`);
+      continue;
+    }
+
+    // 原始输出先落日志再解析：解析失败时第一现场已在业务日志里
+    deps.log("info", "大模型原始输出", { issueKey, model, output: outputText });
+    const review = parseReviewOutput(outputText);
+    if (review) {
+      deps.log("info", "模型审查成功", {
+        issueKey,
+        model,
+        decision: review.decision,
+        classification: review.classification,
+        scenarios: review.scenarios,
+        skillVersion: review.skillVersion,
+      });
+      return { ok: true, review };
+    }
+    deps.log("warn", "模型输出解析失败，尝试下一个", { issueKey, model });
+    failures.push(`${model}: 输出解析失败`);
+  }
+
+  deps.log("error", "全部模型审查失败", {
+    issueKey,
+    attempts: failures.length,
+  });
+  return { ok: false, reason: `全部模型审查失败：${failures.join("；")}` };
 }
 
 /** 从事件信封取 jira-polling 轻量 payload（类型守卫，非法字段一律 undefined） */

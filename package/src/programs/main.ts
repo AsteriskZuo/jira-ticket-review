@@ -9,6 +9,7 @@ const { event } = sdk.input();
 const outcome = await runReviewFlow(event, {
   run: sdk.run,
   agent: sdk.agent,
+  models: sdk.models,
   config: sdk.config,
   secret: sdk.secret,
   log: sdk.log,

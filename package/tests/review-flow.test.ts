@@ -58,6 +58,11 @@ async function makeDeps(overrides: DepsOverrides = {}) {
         issueKey: "HIM-1",
       }),
     ),
+    // 默认单 provider 单模型链：与旧"单次调用"行为等价
+    models: jest.fn(async () => ({
+      default: "mock/mock-model",
+      providers: [{ name: "mock", models: ["mock-model"] }],
+    })),
     config: () => ({ jira_url: "https://jira.example.com" }),
     secret: (name: string) => `secret-${name}`,
     log: () => undefined,
@@ -185,7 +190,7 @@ describe("runReviewFlow", () => {
     expect(record?.ticketUpdatedAt).toBe(UPDATED);
   });
 
-  it("agent 输出非法 → fail（审查输出解析失败），不写记录", async () => {
+  it("唯一模型输出非法 → fail（全部模型审查失败），不写记录", async () => {
     const { deps, store } = await makeDeps({
       agent: jest.fn(async () => "模型说了一堆废话但没有 JSON"),
     });
@@ -195,7 +200,10 @@ describe("runReviewFlow", () => {
       deps,
     );
 
-    expect(outcome).toEqual({ type: "fail", reason: "审查输出解析失败" });
+    expect(outcome).toEqual({
+      type: "fail",
+      reason: "全部模型审查失败：mock/mock-model: 输出解析失败",
+    });
     await expect(store.get("HIM-1")).resolves.toBeUndefined();
   });
 
@@ -334,29 +342,41 @@ describe("runReviewFlow", () => {
 
     expect(deps.agent).toHaveBeenCalledTimes(1);
     expect(outcome.type).toBe("return");
-    expect(log).toHaveBeenCalledWith("warn", "工单缺 issueType 字段，继续审查", {
-      issueKey: "HIM-1",
-    });
+    expect(log).toHaveBeenCalledWith(
+      "warn",
+      "工单缺 issueType 字段，继续审查",
+      {
+        issueKey: "HIM-1",
+      },
+    );
   });
 
-  it("大模型原始输出与审查结果落业务日志", async () => {
+  it("大模型原始输出与模型审查成功落业务日志", async () => {
     const log = jest.fn<ReviewFlowDeps["log"]>(() => undefined);
     const { deps } = await makeDeps({ log });
 
-    await runReviewFlow(envelope({ issue_key: "HIM-1", updated: UPDATED }), deps);
+    await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
 
     expect(log).toHaveBeenCalledWith(
       "info",
       "大模型原始输出",
       expect.objectContaining({
         issueKey: "HIM-1",
+        model: "mock/mock-model",
         output: expect.stringContaining('"decision":"pass"'),
       }),
     );
     expect(log).toHaveBeenCalledWith(
       "info",
-      "审查结果",
-      expect.objectContaining({ issueKey: "HIM-1", decision: "pass" }),
+      "模型审查成功",
+      expect.objectContaining({
+        issueKey: "HIM-1",
+        model: "mock/mock-model",
+        decision: "pass",
+      }),
     );
   });
 
@@ -383,5 +403,213 @@ describe("runReviewFlow", () => {
     const record = await store.get("HIM-1");
     expect(record?.status).toBe("skip");
     expect(record?.ticketUpdatedAt).toBe(UPDATED);
+  });
+});
+
+describe("链式兜底审查", () => {
+  const PASS_OUTPUT = JSON.stringify({
+    decision: "pass",
+    reason: "",
+    summary: "工单信息完整",
+    classification: "Bug",
+    scenarios: ["crash"],
+    issueKey: "HIM-1",
+  });
+
+  const twoModelModels = () => ({
+    default: "a/m1",
+    providers: [{ name: "a", models: ["m1", "m2"] }],
+  });
+
+  it("首模型成功：恰调 1 次，model 为链首 provider/id", async () => {
+    const { deps } = await makeDeps({
+      models: jest.fn(async () => twoModelModels()),
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome.type).toBe("return");
+    expect(deps.agent).toHaveBeenCalledTimes(1);
+    const call = (deps.agent as jest.Mock).mock.calls[0][0] as unknown as {
+      model?: string;
+    };
+    expect(call.model).toBe("a/m1");
+  });
+
+  it("首个抛错、第二个成功：调 2 次后成功，warn 留痕", async () => {
+    const log = jest.fn<ReviewFlowDeps["log"]>(() => undefined);
+    const { deps } = await makeDeps({
+      models: jest.fn(async () => twoModelModels()),
+      agent: jest
+        .fn<ReviewFlowDeps["agent"]>()
+        .mockRejectedValueOnce(new Error("quota exhausted"))
+        .mockResolvedValueOnce(PASS_OUTPUT),
+      log,
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome.type).toBe("return");
+    expect(deps.agent).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledWith(
+      "warn",
+      "模型调用失败，尝试下一个",
+      expect.objectContaining({
+        issueKey: "HIM-1",
+        model: "a/m1",
+        errorMessage: "quota exhausted",
+      }),
+    );
+  });
+
+  it("首个输出解析失败、第二个成功：调 2 次后成功", async () => {
+    const log = jest.fn<ReviewFlowDeps["log"]>(() => undefined);
+    const { deps } = await makeDeps({
+      models: jest.fn(async () => twoModelModels()),
+      agent: jest
+        .fn<ReviewFlowDeps["agent"]>()
+        .mockResolvedValueOnce("模型说了一堆废话但没有 JSON")
+        .mockResolvedValueOnce(PASS_OUTPUT),
+      log,
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome.type).toBe("return");
+    expect(deps.agent).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledWith(
+      "warn",
+      "模型输出解析失败，尝试下一个",
+      expect.objectContaining({ issueKey: "HIM-1", model: "a/m1" }),
+    );
+  });
+
+  it("全部失败（混合）：reason 汇总两个模型原因，恰调 2 次，不写记录", async () => {
+    const { deps, store } = await makeDeps({
+      models: jest.fn(async () => twoModelModels()),
+      agent: jest
+        .fn<ReviewFlowDeps["agent"]>()
+        .mockRejectedValueOnce(new Error("timeout"))
+        .mockResolvedValueOnce("垃圾输出"),
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome).toEqual({
+      type: "fail",
+      reason: "全部模型审查失败：a/m1: 调用失败 timeout；a/m2: 输出解析失败",
+    });
+    expect(deps.agent).toHaveBeenCalledTimes(2);
+    await expect(store.get("HIM-1")).resolves.toBeUndefined();
+  });
+
+  it("空枚举（业务未配置大模型）：fail 且一次不调 agent，不写记录", async () => {
+    const { deps, store } = await makeDeps({
+      models: jest.fn(async () => ({
+        default: "",
+        providers: [] as { name: string; models: string[] }[],
+      })),
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome).toEqual({ type: "fail", reason: "业务未配置大模型配置" });
+    expect(deps.agent).not.toHaveBeenCalled();
+    await expect(store.get("HIM-1")).resolves.toBeUndefined();
+  });
+
+  it("models() 抛错：fail（含原始错误信息）且一次不调 agent", async () => {
+    const { deps } = await makeDeps({
+      models: jest.fn(async () => {
+        throw new Error("socket timeout");
+      }),
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome).toEqual({
+      type: "fail",
+      reason: "枚举大模型配置失败：socket timeout",
+    });
+    expect(deps.agent).not.toHaveBeenCalled();
+  });
+
+  it("链顺序：跨 provider 按声明顺序逐个尝试，model/mode 逐次断言", async () => {
+    const agent = jest
+      .fn<ReviewFlowDeps["agent"]>()
+      .mockRejectedValueOnce(new Error("e1"))
+      .mockRejectedValueOnce(new Error("e2"))
+      .mockResolvedValueOnce(PASS_OUTPUT);
+    const { deps } = await makeDeps({
+      models: jest.fn(async () => ({
+        default: "a/m1",
+        providers: [
+          { name: "a", models: ["m1", "m2"] },
+          { name: "b", models: ["m1"] },
+        ],
+      })),
+      agent,
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome.type).toBe("return");
+    expect(agent).toHaveBeenCalledTimes(3);
+    const attempts = agent.mock.calls.map((call) => {
+      const arg = call[0] as { model?: string; mode?: string };
+      return { model: arg.model, mode: arg.mode };
+    });
+    expect(attempts).toEqual([
+      { model: "a/m1", mode: "fresh" },
+      { model: "a/m2", mode: "fresh" },
+      { model: "b/m1", mode: "fresh" },
+    ]);
+  });
+
+  it("skip 命中即停：首个模型判 skip，只调 1 次，return(null)", async () => {
+    const { deps, store } = await makeDeps({
+      models: jest.fn(async () => twoModelModels()),
+      agent: jest.fn(async () =>
+        JSON.stringify({
+          decision: "skip",
+          reason: "信息不足但需要人工补充",
+          summary: "skip",
+          classification: "",
+          scenarios: [],
+          issueKey: "HIM-1",
+        }),
+      ),
+    });
+
+    const outcome = await runReviewFlow(
+      envelope({ issue_key: "HIM-1", updated: UPDATED }),
+      deps,
+    );
+
+    expect(outcome).toEqual({ type: "return", value: null });
+    expect(deps.agent).toHaveBeenCalledTimes(1);
+    const record = await store.get("HIM-1");
+    expect(record?.status).toBe("skip");
   });
 });
