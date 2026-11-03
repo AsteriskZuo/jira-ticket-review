@@ -2,8 +2,8 @@ import { jest } from "@jest/globals";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runReviewFlow, type ReviewFlowDeps } from "../src/review-flow.js";
-import { ReviewRecordStore } from "../src/review-records.js";
+import { runReviewFlow, type ReviewFlowDeps } from "../packages/review-flow.js";
+import { ReviewRecordStore } from "../packages/review-records.js";
 
 const UPDATED = "2026-10-09T10:00:00.000+0800";
 /** 审查时刻实时工单的 updated（jira-fetch 返回；有意晚于事件自带时间，区分标记来源） */
@@ -616,7 +616,6 @@ describe("链式兜底审查", () => {
     expect(record?.status).toBe("skip");
   });
 });
-
 
 describe("created 延迟与合并（webhook 归一化事件）", () => {
   // webhook 形状：time（RFC3339）代替 updated；event_type 判别 created

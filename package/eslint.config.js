@@ -11,7 +11,7 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts", "tests/**/*.ts"],
+    files: ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts"],
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {
       "prefer-const": ["error", { ignoreReadBeforeAssign: true }],

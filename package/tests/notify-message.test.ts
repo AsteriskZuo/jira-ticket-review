@@ -2,9 +2,9 @@ import { jest } from "@jest/globals";
 import {
   buildNotifyMessage,
   type ReviewIdentity,
-} from "../src/notify-message.js";
-import type { WeComAccount } from "../src/person-mapping.js";
-import type { ReviewOutput } from "../src/review-output.js";
+} from "../packages/notify-message.js";
+import type { WeComAccount } from "../packages/person-mapping.js";
+import type { ReviewOutput } from "../packages/review-output.js";
 
 const JIRA_URL = "https://jira.example.com/";
 

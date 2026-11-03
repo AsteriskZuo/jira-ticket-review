@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ReviewRecordStore } from "../src/review-records.js";
+import { ReviewRecordStore } from "../packages/review-records.js";
 
 describe("ReviewRecordStore", () => {
   it("returns undefined for unrecorded issue", async () => {

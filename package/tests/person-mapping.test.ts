@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPersonLookup } from "../src/person-mapping.js";
+import { createPersonLookup } from "../packages/person-mapping.js";
 
 /**
  * 假数据 fixture（不读真实映射表 data/jira-wecom-mapping.json 做断言）。

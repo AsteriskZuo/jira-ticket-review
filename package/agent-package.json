@@ -1,8 +1,10 @@
 {
   "name": "jira-ticket-review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "programs": {
-    "main": "dist/programs/main.js"
+    "main": "dist/apps/main/index.js",
+    "check-input": "dist/apps/check-input/index.js",
+    "check-output": "dist/apps/check-output/index.js"
   },
   "requires": {
     "tools": ["jira-fetch"],

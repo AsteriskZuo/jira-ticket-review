@@ -1,4 +1,4 @@
-import { parseReviewOutput } from "../src/review-output.js";
+import { parseReviewOutput } from "../packages/review-output.js";
 
 describe("parseReviewOutput", () => {
   it("parses valid JSON output", () => {

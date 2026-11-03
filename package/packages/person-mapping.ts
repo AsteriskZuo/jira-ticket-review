@@ -42,12 +42,12 @@ export type PersonLookup = {
 
 /**
  * 默认映射表落点：资产根 data/jira-wecom-mapping.json。
- * 本模块编译产物在 dist/ 根（dist/person-mapping.js），上溯一级即资产根；
+ * 本模块编译产物在 dist/packages/（dist/packages/person-mapping.js），上溯两级即资产根；
  * 物化产物与本地 dev（npm run build / dist-test 不参与默认查找）相对位置一致。
  */
 function defaultMappingPath(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "data", "jira-wecom-mapping.json");
+  return join(here, "..", "..", "data", "jira-wecom-mapping.json");
 }
 
 /**

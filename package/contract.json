@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "input": {
+    "fields": [
+      {
+        "path": "payload.issue_key",
+        "type": "string",
+        "required": true,
+        "desc": "工单 key：会话标识与取数锚点（polling 与 webhook 两来源都必有）"
+      },
+      {
+        "path": "payload.event_type",
+        "type": "string",
+        "required": false,
+        "desc": "webhook 来源有（jira:issue_created / jira:issue_updated，created 延迟合并用）；polling 来源无"
+      },
+      {
+        "path": "payload.time",
+        "type": "string",
+        "required": false,
+        "desc": "webhook 事件时间（RFC3339；去重标记的回退时间）"
+      },
+      {
+        "path": "payload.updated",
+        "type": "string",
+        "required": false,
+        "desc": "polling 来源的工单更新时间（Jira 原始格式）"
+      }
+    ]
+  },
+  "output": {
+    "fields": [
+      {
+        "path": "content",
+        "type": "string",
+        "required": true,
+        "desc": "企微 markdown 正文（过渡态：面向企微呈现）。产出非空时必填——skip 路径（去重命中/已终态/非 Bug/模型判 skip）合法产出 null，由 check-output 逃生门放行"
+      },
+      {
+        "path": "mentions",
+        "type": "string[]",
+        "required": false,
+        "desc": "@ 的企微 userid 列表（人→userid 映射是运营数据，走包内 data/ 映射表）"
+      }
+    ]
+  }
+}

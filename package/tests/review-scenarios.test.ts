@@ -5,7 +5,7 @@ import {
   formatScenarioList,
   isScenarioCode,
   normalizeScenarioCode,
-} from "../src/review-scenarios.js";
+} from "../packages/review-scenarios.js";
 
 describe("REVIEW_SCENARIOS", () => {
   it("contains exactly 15 scenarios with unique codes", () => {

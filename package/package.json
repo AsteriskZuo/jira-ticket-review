@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@asteriskzuo/agent-sdk": "^0.3.0",
+    "@asteriskzuo/agent-sdk": "^0.4.0",
     "pinyin-pro": "^3.28.2"
   },
   "devDependencies": {
@@ -24,11 +24,11 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",
-    "test": "npm run build && rm -rf dist-test && esbuild $(find src -name '*.ts') --outdir=dist-test/src --outbase=src --format=esm --platform=node --target=node24 --sourcemap --log-level=error && esbuild $(find tests -name '*.ts') --outdir=dist-test/tests --outbase=tests --format=esm --platform=node --target=node24 --sourcemap --log-level=error && NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.mjs --rootDir .",
+    "test": "npm run build && rm -rf dist-test && esbuild $(find apps packages -name '*.ts') --outdir=dist-test --outbase=. --format=esm --platform=node --target=node24 --sourcemap --log-level=error && esbuild $(find tests -name '*.ts') --outdir=dist-test/tests --outbase=tests --format=esm --platform=node --target=node24 --sourcemap --log-level=error && NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.mjs --rootDir .",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "circular": "dpdm --circular --transform \"src/**/*.ts\""
+    "circular": "dpdm --circular --transform \"apps/**/*.ts\" \"packages/**/*.ts\""
   }
 }

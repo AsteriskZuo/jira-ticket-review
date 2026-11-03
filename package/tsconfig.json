@@ -10,9 +10,9 @@
     "declaration": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "types": ["node", "jest"]
   },
-  "include": ["src/**/*"],
+  "include": ["apps/**/*.ts", "packages/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist-test", "tests"]
 }
