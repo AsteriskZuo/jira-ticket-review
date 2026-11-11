@@ -232,7 +232,9 @@ export async function runReviewFlow(
     return { type: "return", value: null };
   }
 
-  // 9. pass/fail 通知：组装 wecom-webhook resultDoc 形状
+  // 9. pass/fail 通知：组装 wecom-webhook resultDoc 形状；
+  // metrics 是平台保留键（统计面）：decision/classification 取本次审查结论，
+  // skill_version 由 main 出口补（取 agent-package.json 的 version）
   const message = await buildNotifyMessage(
     { review, identity, jiraUrl },
     lookupWeComAccount,
@@ -242,7 +244,16 @@ export async function runReviewFlow(
     decision: review.decision,
     mentions: message.mentions ?? [],
   });
-  return { type: "return", value: message };
+  return {
+    type: "return",
+    value: {
+      ...message,
+      metrics: {
+        decision: review.decision,
+        classification: review.classification,
+      },
+    },
+  };
 }
 
 /** 链式审查结果：ok 命中采纳；reason 为面向日志/失败透传的中文汇总 */

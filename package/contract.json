@@ -43,5 +43,27 @@
         "desc": "@ 的企微 userid 列表（人→userid 映射是运营数据，走包内 data/ 映射表）"
       }
     ]
+  },
+  "metrics": {
+    "fields": [
+      {
+        "key": "decision",
+        "type": "string",
+        "required": true,
+        "desc": "审查结论：pass / fail（skip 路径产出为 null 不进 metrics，故 skip 不计）"
+      },
+      {
+        "key": "classification",
+        "type": "string",
+        "required": true,
+        "desc": "工单分类：模型审查结论里的 classification 原样值"
+      },
+      {
+        "key": "skill_version",
+        "type": "string",
+        "required": false,
+        "desc": "skill 版本：取 agent-package.json 的 version，供审查质量按版本追溯"
+      }
+    ]
   }
 }

@@ -244,6 +244,7 @@ describe("runReviewFlow", () => {
     const value = outcome.type === "return" ? outcome.value : undefined;
     expect(value).toMatchObject({
       mentions: ["ZhangSan"],
+      metrics: { decision: "pass", classification: "Bug" },
     });
     expect((value as { content: string }).content).toContain("工单审查通过");
     const record = await store.get("HIM-1");
@@ -272,7 +273,10 @@ describe("runReviewFlow", () => {
 
     expect(outcome.type).toBe("return");
     const value = outcome.type === "return" ? outcome.value : undefined;
-    expect(value).toMatchObject({ mentions: ["ZhangSan"] });
+    expect(value).toMatchObject({
+      mentions: ["ZhangSan"],
+      metrics: { decision: "fail", classification: "Bug" },
+    });
     expect((value as { content: string }).content).toContain("工单审查不通过");
     const record = await store.get("HIM-1");
     expect(record?.status).toBe("fail");

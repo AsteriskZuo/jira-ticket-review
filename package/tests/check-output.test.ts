@@ -34,7 +34,7 @@ function lastResult(stdout: string): {
   return JSON.parse(stdout.trim().split("\n").at(-1)!);
 }
 
-describe("check-output 程序（条件必填逃生门：空产出放行，非空校验 content 必填）", () => {
+describe("check-output 程序（条件必填逃生门：空产出放行，非空校验 content 必填 + metrics 契约）", () => {
   it("output 为 null（skip 路径合法产出）→ ok:true + exit 0", () => {
     const r = run(envelope(null));
     expect(r.code).toBe(0);
@@ -47,14 +47,24 @@ describe("check-output 程序（条件必填逃生门：空产出放行，非空
     expect(lastResult(r.stdout).ok).toBe(true);
   });
 
-  it("output.content 为 string → ok:true（mentions 可选不查）", () => {
-    const r = run(envelope({ content: "## 审查通过\n全部符合规范" }));
+  it("output.content 为 string + metrics 完整 → ok:true（mentions、skill_version 可选不查）", () => {
+    const r = run(
+      envelope({
+        content: "## 审查通过\n全部符合规范",
+        metrics: { decision: "pass", classification: "contact-group" },
+      }),
+    );
     expect(r.code).toBe(0);
     expect(lastResult(r.stdout).ok).toBe(true);
   });
 
   it("output 缺 content → ok:false，reason 含缺失路径", () => {
-    const r = run(envelope({ mentions: ["ZhangSan"] }));
+    const r = run(
+      envelope({
+        mentions: ["ZhangSan"],
+        metrics: { decision: "fail", classification: "crash" },
+      }),
+    );
     expect(r.code).toBe(1);
     const result = lastResult(r.stdout);
     expect(result.ok).toBe(false);
@@ -62,11 +72,79 @@ describe("check-output 程序（条件必填逃生门：空产出放行，非空
   });
 
   it("output.content 类型错（number）→ ok:false，reason 含期望与实际类型", () => {
-    const r = run(envelope({ content: 42 }));
+    const r = run(
+      envelope({
+        content: 42,
+        metrics: { decision: "fail", classification: "crash" },
+      }),
+    );
     expect(r.code).toBe(1);
     const result = lastResult(r.stdout);
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("期望 string");
     expect(result.reason).toContain("实际 number");
+  });
+
+  it("非空产出缺 metrics → ok:false，required 键 decision/classification 均报缺失", () => {
+    const r = run(envelope({ content: "## 审查通过" }));
+    expect(r.code).toBe(1);
+    const result = lastResult(r.stdout);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("缺少必填指标：decision");
+    expect(result.reason).toContain("缺少必填指标：classification");
+  });
+
+  it("metrics.decision 类型错（number）→ ok:false，reason 含指标类型不符", () => {
+    const r = run(
+      envelope({
+        content: "## 审查不通过",
+        metrics: { decision: 1, classification: "crash" },
+      }),
+    );
+    expect(r.code).toBe(1);
+    const result = lastResult(r.stdout);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("指标类型不符：decision");
+  });
+
+  it("metrics 含未声明键 → ok:true（未声明键不查）", () => {
+    const r = run(
+      envelope({
+        content: "## 审查通过",
+        metrics: {
+          decision: "pass",
+          classification: "crash",
+          extra_metric: "whatever",
+        },
+      }),
+    );
+    expect(r.code).toBe(0);
+    expect(lastResult(r.stdout).ok).toBe(true);
+  });
+
+  it("可选键 skill_version 类型错（number）→ ok:false", () => {
+    const r = run(
+      envelope({
+        content: "## 审查通过",
+        metrics: {
+          decision: "pass",
+          classification: "crash",
+          skill_version: 150,
+        },
+      }),
+    );
+    expect(r.code).toBe(1);
+    const result = lastResult(r.stdout);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("指标类型不符：skill_version");
+  });
+
+  it("output 字段问题与 metrics 问题合并报出（同一 fail）", () => {
+    const r = run(envelope({ mentions: ["ZhangSan"] }));
+    expect(r.code).toBe(1);
+    const result = lastResult(r.stdout);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("content");
+    expect(result.reason).toContain("缺少必填指标：decision");
   });
 });
